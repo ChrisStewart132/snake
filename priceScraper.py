@@ -1,168 +1,144 @@
 import urllib.request as urllib
 import time
-import tkinter as tk
+from tkinter import *
+from tkinter.ttk import *
 import os.path
 
-class Application(tk.Frame):
-    itemListCache = []#stocks silver etc.
-    priceListCache = []#prices of above
-    delta = [0,0,0,0,0,0,0,0,0,0,0,0,0]#difference between cache and latest update
-    
-    def __init__(self, master=None):
-        super().__init__(master)
-        self.master = master
-        self.pack()
+class Stock():
+    def __init__(self, code):
+        self.code = code
+        self.buy = 0
+        self.sell = 0
+    def __str__(self):
+        return "code: {}, buy: {}, sell: {}".format(self.code, self.buy, self.sell)
+    def __lt__(self, other):
+        return self.sell > other.sell
+
+class Application():
+    codesString = "AIR,ANZ,WBC,FBU,ZEL"
+
+    def __init__(self, window):
         self.create_widgets()
-        print("init..")
         self.cacheFromFile()
-        
+ 
     def create_widgets(self):
         '''display stuff'''
-        self.updateBtn = tk.Button(self)
-        self.updateBtn["text"] = "\n    UPDATE  \n"
-        self.updateBtn["command"] = self.update
-        self.updateBtn.pack(side="top")
-
-        self.space = tk.Message(self)
-        self.space["text"] = "=                                                                            ="
-        self.space.pack(side="top")
+        font_style = "Arial"
+        font_size = 13
         
-        self.message = tk.Message(self)
-        self.message["text"] = ""
-        self.message.pack(side="top")
-
-        self.space2 = tk.Message(self)
-        self.space2["text"] = "=                                                                            ="
-        self.space2.pack(side="top")
-
-        self.cache = tk.Button(self,text="  CACHE   \n\n",command=self.cachePrice)
-        self.cache.pack(side="top")
-
-        self.space2 = tk.Message(self)
-        self.space2["text"] = "=                                                                            ="
-        self.space2.pack(side="top")
+        self.update_button = Button(window, text="UPDATE",command=self.update)
+        self.update_button.grid(row=0,column=0)
         
-        self.quit = tk.Button(self, text="QUIT", fg="red",command=self.master.destroy)
-        self.quit.pack(side="top")
+        self.cache = Button(window, text="CACHE",command=self.cachePrice)
+        self.cache.grid(row=1,column=0)
 
+        self.stock_list_cache = []      #cache of below stock codes for comparison
+        self.stock_list = []            #list of stock class objects initialized off a string of stock codes
+        self.stock_code_labels = []
+        self.stock_buy_labels = []
+        self.stock_sell_labels = []
+        self.stock_delta_labels = []
+        for i, stock in enumerate(self.codesString.split(",")):
+            self.stock_list_cache.append(Stock(stock))
+            self.stock_list.append(Stock(stock))
+            if i == 0:
+                spacing = 20
+            else:
+                spacing = 0
+            label_width = 6
+            self.stock_code_labels.append(Label(window,text=self.stock_list[i].code,width=label_width,font=(font_style, font_size)))
+            self.stock_code_labels[i].grid(row=0,column = 1 + i,padx=(spacing,0))
+            
+            self.stock_buy_labels.append(Label(window,text=self.stock_list[i].buy,width=label_width,font=(font_style, font_size)))
+            self.stock_buy_labels[i].grid(row=1,column = 1 + i,padx=(spacing,0))
+            
+            self.stock_sell_labels.append(Label(window,text=self.stock_list[i].sell,width=label_width,font=(font_style, font_size)))
+            self.stock_sell_labels[i].grid(row=2,column = 1 + i,padx=(spacing,0))
+            
+            self.stock_delta_labels.append(Label(window,text=self.stock_list[i].sell-self.stock_list_cache[i].sell,width=label_width,font=(font_style, font_size)))
+            self.stock_delta_labels[i].grid(row=3,column = 1 + i,padx=(spacing,0))
+
+        self.silver_label = Label(window,text="silver: ",font=(font_style, font_size))
+        self.silver_label.grid(row=4,column=1,columnspan=5)
+    
+    def extract_price(self, s, start_quote, length=5):
+        """s=web page string, start_quote=search query/tag, length=len of the price"""
+        start = s.index(start_quote)
+        offset=len(start_quote)
+        price = ""
+        for i in range(length):
+                char = s[i+start+offset]
+                if char.isnumeric() or char=='.':
+                    price = price + char
+        return price
+        
     def update(self):
         '''main function, runs when update clicked, scrapes web page docs for targeted info'''
-        updateText = ""
-        print("web update..")
-        codesString = "AIR,ANZ,WBC,FBU,ZEL"
         b1 = "https://www.directbroking.co.nz/DirectTrade/dynamic/quote.aspx?qqsc="
         b2 = "&qqe=NZSE"
-        urls = []
-        codes = codesString.split(",")
-        for code in codes:
-            urls.append(b1+code+b2)
-            if len(self.itemListCache)<len(codes)+1:#stocks + 1 for silver price..
-                self.itemListCache.append(code)
-        n = 0
-        for url in urls:
+        for i, stock in enumerate(self.stock_list):
+            url = b1+stock.code+b2
             obj = urllib.urlopen(url)
-            #print(codesString.split(",")[n])#nzx codes
-            updateText = updateText + codesString.split(",")[n]#AIR
-            s = obj.read()
-            s = s.decode()#convert data from byte array to string
-            start = s.index('span id="quotebuy">')
-            quotebuy=""
-            offset=len('span id="quotebuy">')
-            for i in range(5):
-                char = s[i+start+offset]
-                if char.isnumeric() or char=='.':
-                    quotebuy = quotebuy + char
-            #print("buy:" + quotebuy)
-            updateText = updateText + "     " + quotebuy#AIR 134
-            start = s.index('span id="quotesell">')
-            quotesell=""
-            offset=len('span id="quotesell">')
-            for i in range(5):
-                char = s[i+start+offset]
-                if char.isnumeric() or char=='.':
-                    quotesell = quotesell + char
-            quotesell = quotesell.replace(" ","")
-            if len(self.priceListCache)<len(codes)+1:#stocks + 1 for silver price..
-                self.priceListCache.append(float(quotesell))
-            self.delta[n] = self.priceListCache[n] - float(quotesell)
-            #print("{} : {} : {}".format(self.itemListCache[n], self.priceListCache[n],self.delta[n]))
-            self.priceListCache[n] = float(quotesell)
-            #print("sell:" + quotesell)
-            updateText = updateText + "     " + quotesell + "     " + str(self.delta[n])#AIR 134 135
-            n = n + 1
-            time.sleep(0.5)
-            updateText = updateText + "\n"
-
+            s = obj.read().decode()
+            self.stock_list[i].buy = self.extract_price(s, 'span id="quotebuy">')#tag from analysing web page for stock price
+            self.stock_list[i].sell = self.extract_price(s, 'span id="quotesell">')#tag from analysing web page for stock price
+            self.stock_buy_labels[i]['text'] = self.stock_list[i].buy
+            self.stock_sell_labels[i]['text'] = self.stock_list[i].sell
+            
         silverLink = 'http://www.livepriceofgold.com/silver-price/new-zealand.html'
         silverDoc = urllib.urlopen(silverLink)
         s = silverDoc.read()
         s = s.decode()
-        searchValue = 'Silver Price per Kg in NZD</td><td>'
-        start = s.index(searchValue)
-        silverPrice = ""
-        for i in range(8):
-            char = s[i+start+len(searchValue)]
-            silverPrice = silverPrice + char
-        self.message["text"]=updateText + "\nSILVER (NZD/kg) : {}".format(silverPrice)
-
+        silverPrice = self.extract_price(s, 'Silver Price per Kg in NZD</td><td>', 8)
+        self.silver_label["text"]="SILVER (NZD/kg) : {}".format(silverPrice)  
+    
     def cacheToFile(self):
         '''run inside cachePrice (when cache clicked)'''
         directory = "cache.txt"
         outfile = open(directory, 'w')
         print("cache to file...")
-        stockStrings = self.message["text"]
-        stockData = stockStrings.split("\n")
         result = ""
-        for stock in stockData:
-            result = result + stock + "\n"
-        outfile.write(result)
+        for stock in self.stock_list:
+            result += "{},{},{}\n".format(stock.code, stock.buy, stock.sell)
+        result += self.silver_label['text']
+        outfile.write(result[:-1])
         outfile.close()
 
     def cachePrice(self):
         '''run when button clicked, updates display and text file when clicked'''
         print("saving prices")
-        stockStrings = self.message["text"]
-        stockData = stockStrings.split("\n")
-        result = ""
-        for stock in stockData:
-            result = result + stock + "\n"
-        self.cache["text"]= "   CACHE   \n\n" + result
+        for i, stock in enumerate(self.stock_list):
+            self.stock_list_cache[i].buy = stock.buy
+            self.stock_list_cache[i].sell = stock.sell
+            print(self.stock_list_cache[i].code  + " " + self.stock_list_cache[i].buy + " "  + self.stock_list_cache[i].sell)
         self.cacheToFile()
-        #below to cache prices as variables..
-        temp = result.split("\n")
-        temp2 = []
-        for i in range(len(temp)):
-            if len(temp[i])>=3:
-                temp2.append(temp[i])
-                #print(temp[i])
-        temp3 = []
-        for i in range(len(temp2)):
-            temp3.append(temp2[i].replace("   ",":"))
-            #print(temp3[i])
-        temp3.pop()
-        temp4 = []
-        for i in range(len(temp3)):
-            temp4.append(temp3[i].split(":"))
-            #print(temp4[i])
-            if len(self.itemListCache)<6:#manual update if increase/decrease stock codes..todo
-                self.itemListCache.append(temp4[i][0])
-            if len(self.priceListCache)<6:#stocks + 1 for silver price..
-                self.priceListCache.append(float(temp4[i][2]))      
-            self.delta[i] = self.priceListCache[i] - float(temp4[i][2])
-            self.priceListCache[i] = float(temp4[i][2])
         
     def cacheFromFile(self):
         '''runs on startup, loads cache.txt string to display'''
-        
         if os.path.isfile("cache.txt"):
             infile = open("cache.txt")
-            self.cache["text"] = "   CACHE   \n\n" + infile.read()
+            for i, line in enumerate(infile.read().split('\n')):
+                print(line)
+                if line.startswith("SILVER"):
+                    self.silver_label['text'] = line
+                else:
+                    split_line = line.split(",")
+                    self.stock_list_cache[i].code = split_line[0]
+                    self.stock_list_cache[i].buy = split_line[1]
+                    self.stock_list_cache[i].sell = split_line[2]
+                    
+                    self.stock_list[i].code = split_line[0]
+                    self.stock_list[i].buy = split_line[1]
+                    self.stock_list[i].sell = split_line[2]
+                    self.stock_code_labels[i]['text'] = split_line[0]
+                    self.stock_buy_labels[i]['text'] = split_line[1]
+                    self.stock_sell_labels[i]['text'] = split_line[2]          
         else:
             print("error, no 'cache.txt' in directory, click update then cache to generate..")
-
-root = tk.Tk()
-app = Application(master=root)
-app.mainloop()
+    
+window = Tk()
+price_scraper_gui = Application(window)
+window.mainloop()
 
 
 
